@@ -1,0 +1,59 @@
+\begin{tikzpicture}[]
+
+
+
+\coordinate (shiftV) at  ($(0,0cm)  $);
+\begin{scope}[shift=(shiftV), local bounding box=scopeV]
+
+\begin{axis}[%
+   xlabel =$r$,
+   ylabel= $V_\text{attr}(r)$,
+   xmin=0, xmax=6,
+   scale only axis, width=7cm , height=4.6cm,%
+   legend style={font=\footnotesize,at={(0.9,0.2)},anchor=south 
+   east,draw=black,name=legend}]
+    
+
+  \addplot[black!35, dotted, forget plot]{ 0.0};
+   
+  \addplot[solid, blue]   table [x expr=\thisrowno{1}*1, y expr=\thisrowno{2}*1]  {data/v11.dat};
+  \addlegendentry{$1-1$}  
+
+  \addplot[dashed, red]   table [x expr=\thisrowno{1}*1, y expr=\thisrowno{2}*1]  {data/v12.dat};
+  \addlegendentry{$1-2$}  
+ 
+  \addplot[dotted, thick, purple] table [x expr=\thisrowno{1}*1, y expr=\thisrowno{2}*1]  {data/v22.dat};
+  \addlegendentry{$2-2$}  
+ 
+\end{axis}
+\end{scope}
+
+
+\coordinate (shiftF) at  ($1*(9 cm ,0 cm)  $);
+\begin{scope}[shift=(shiftF), local bounding box=scopeF]
+
+\begin{axis}[%
+   xlabel =$r$,
+   ylabel= $-V'_\text{attr}(r)$,
+   xmin=0, xmax=6,
+   scale only axis, width=7cm , height=4.6cm,%
+   legend style={font=\footnotesize,at={(0.9,0.2)},anchor=south 
+   east,draw=black,name=legend}]
+
+  \addplot[black!35, dotted, forget plot]{ 0.0};
+   
+  \addplot[solid, blue]   table [x expr=\thisrowno{1}*1, y expr=\thisrowno{3}*1]  {data/v11.dat};
+  \addlegendentry{$1-1$}  
+
+  \addplot[dashed, red]   table [x expr=\thisrowno{1}*1, y expr=\thisrowno{3}*1]  {data/v12.dat};
+  \addlegendentry{$1-2$}  
+ 
+  \addplot[dotted, thick, purple] table [x expr=\thisrowno{1}*1, y expr=\thisrowno{3}*1]  {data/v22.dat};
+  \addlegendentry{$2-2$}  
+ 
+\end{axis}
+\end{scope}
+
+
+\end{tikzpicture}
+ 

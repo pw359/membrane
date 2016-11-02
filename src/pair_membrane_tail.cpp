@@ -60,12 +60,11 @@ PairMembraneTail::~PairMembraneTail()
 
 void PairMembraneTail::compute(int eflag, int vflag)
 {
-
-  double r, rc;
+  double r, rc, rcpwc, cosone;
 
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r2inv,r6inv,forcelj,factor_lj;
+  double rsq,r2inv,r6inv,dvdr,factor_lj;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = 0.0;
@@ -108,28 +107,16 @@ void PairMembraneTail::compute(int eflag, int vflag)
 
       if (rsq < cutsq[itype][jtype]) {
 
-        
-
-        r   = sqrt(rsq);
-        rc  = sqrt(cutsq[itype][jtype]);
-
-
-
-        // pw359: change
-
-/*        r2inv = 1.0/rsq;
-        r6inv = r2inv*r2inv*r2inv;
-        forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
-        fpair = factor_lj*forcelj*r2inv;
-*/
+        r      = sqrt(rsq);
+        rcpwc  = sqrt(cutsq[itype][jtype]);
+        rc     = rcpwc - wc[itype][jtype];
 
         if (r >= rc && r <= rc + wc[itype][jtype]) {
-          forcelj = epsilon[itype][jtype] * sin(MY_PI*(r-rc)/wc[itype][jtype]) * MY_PI/wc[itype][jtype];
-          fpair   = factor_lj * forcelj*r2inv;
+          dvdr    = MY_PI * epsilon[itype][jtype] * sin(MY_PI*(r-rc)/wc[itype][jtype]) / (2.*wc[itype][jtype]);
+          fpair   = -dvdr * factor_lj / r ;
         }
         else
           fpair = 0;
-
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
@@ -143,22 +130,15 @@ void PairMembraneTail::compute(int eflag, int vflag)
 
         if (eflag) {
 
-          // pw359: change
-/*          evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
-            offset[itype][jtype];
-          evdwl *= factor_lj;
-*/
-
           if (r < rc) 
-            evdwl = -factor_lj * epsilon[itype][jtype];
+            evdwl  = -factor_lj * epsilon[itype][jtype];
           else if (r >= rc && r <= rc + wc[itype][jtype]) {
-            cosone = cos(MY_PI * (r - rc)/(2.*wc[itype][jtype]));
-            evdwl  = -epsilon[itype][jtype] * cosone*cosone;
-            evdwl *= factor_lj;
+            cosone =  cos(MY_PI * (r - rc)/(2.*wc[itype][jtype]));
+            evdwl  = -epsilon[itype][jtype] * cosone * cosone;
+            evdwl *=  factor_lj;
           }
           else 
             evdwl = 0;
-
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
@@ -180,20 +160,15 @@ void PairMembraneTail::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
-
   memory->create(setflag,n+1,n+1,"pair:setflag");
   for (int i = 1; i <= n; i++)
     for (int j = i; j <= n; j++)
       setflag[i][j] = 0;
-
   memory->create(cutsq,n+1,n+1,"pair:cutsq");
   memory->create(cut,n+1,n+1,"pair:cut");
   memory->create(epsilon,n+1,n+1,"pair:epsilon");
   memory->create(wc,n+1,n+1,"pair:wc");
-  //memory->create(offset,n+1,n+1,"pair:offset");
 }
-
-
 
 /* ----------------------------------------------------------------------
    global settings
@@ -214,7 +189,6 @@ void PairMembraneTail::settings(int narg, char **arg)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
-
 
 
 /* ----------------------------------------------------------------------
@@ -242,7 +216,8 @@ void PairMembraneTail::coeff(int narg, char **arg)
     for (int j = MAX(jlo,i); j <= jhi; j++) {
       epsilon[i][j]    = epsilon_one;
       wc[i][j]         = wc_one;
-      cut[i][j]        = cut_one;
+      // pw359: For technical reasons cut = rc+wc in the paper
+      cut[i][j]        = cut_one + wc_one;
       setflag[i][j]    = 1;
       count++;
     }
@@ -261,101 +236,19 @@ void PairMembraneTail::init_style()
 }
 
 /* ----------------------------------------------------------------------
-   neighbor callback to inform pair style of neighbor list to use
-   regular or rRESPA
-------------------------------------------------------------------------- */
-/*
-void PairMembraneTail::init_list(int id, NeighList *ptr)
-{
-  if (id == 0) list = ptr;
-  else if (id == 1) listinner = ptr;
-  else if (id == 2) listmiddle = ptr;
-  else if (id == 3) listouter = ptr;
-}
-*/
-
-
-/* ----------------------------------------------------------------------
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
 double PairMembraneTail::init_one(int i, int j)
 {
+  if (setflag[i][j] == 0) 
+    error->all(FLERR,"Not sure how to apply mixing rules for this pair_style");
 
+  epsilon[j][i] =  epsilon[i][j];
+  wc[j][i]      =  wc[i][j];
+  cut[j][i]     =  cut[i][j];
 
-  if (setflag[i][j] == 0) {
-
-    printf("PairMembraneTail::ERROR: Cannot apply mixing rules!\n");
-    exit(-1);
-/*    epsilon[i][j] = mix_energy(epsilon[i][i],epsilon[j][j],
-                               sigma[i][i],sigma[j][j]);
-    sigma[i][j] = mix_distance(sigma[i][i],sigma[j][j]);
-    cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
-*/
-  }
-
-/*
-  lj1[i][j] = 48.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
-  lj2[i][j] = 24.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
-  lj3[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
-  lj4[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
-*/
-
-
-
-  // pw359: NOTE: offset flag not supported
-  /*if (offset_flag) {
-    double ratio = sigma[i][j] / cut[i][j];
-    offset[i][j] = 4.0 * epsilon[i][j] * (pow(ratio,12.0) - pow(ratio,6.0));
-  } else offset[i][j] = 0.0;
-*/
-/*
-  lj1[j][i] = lj1[i][j];
-  lj2[j][i] = lj2[i][j];
-  lj3[j][i] = lj3[i][j];
-  lj4[j][i] = lj4[i][j];
-  offset[j][i] = offset[i][j];
-*/
-
-
-
-  // pw359: NOTE: respa is currently not supported!
-  // check interior rRESPA cutoff
-/*
-  if (cut_respa && cut[i][j] < cut_respa[3])
-    error->all(FLERR,"Pair cutoff < Respa interior cutoff");
-*/
-
-  // compute I,J contribution to long-range tail correction
-  // count total # of atoms of type I and J via Allreduce
-
-
-
-  // pw359: NOTE: tail_flag is not supported
-/*
-  if (tail_flag) {
-    int *type = atom->type;
-    int nlocal = atom->nlocal;
-
-    double count[2],all[2];
-    count[0] = count[1] = 0.0;
-    for (int k = 0; k < nlocal; k++) {
-      if (type[k] == i) count[0] += 1.0;
-      if (type[k] == j) count[1] += 1.0;
-    }
-    MPI_Allreduce(count,all,2,MPI_DOUBLE,MPI_SUM,world);
-
-    double sig2 = sigma[i][j]*sigma[i][j];
-    double sig6 = sig2*sig2*sig2;
-    double rc3 = cut[i][j]*cut[i][j]*cut[i][j];
-    double rc6 = rc3*rc3;
-    double rc9 = rc3*rc6;
-    etail_ij = 8.0*MY_PI*all[0]*all[1]*epsilon[i][j] *
-      sig6 * (sig6 - 3.0*rc6) / (9.0*rc9);
-    ptail_ij = 16.0*MY_PI*all[0]*all[1]*epsilon[i][j] *
-      sig6 * (2.0*sig6 - 3.0*rc6) / (9.0*rc9);
-  }
-*/
+  // pw359: Note that cutsq, (i,j) and (j,i), are set in pair.cpp
 
   return cut[i][j];
 }
@@ -414,13 +307,8 @@ void PairMembraneTail::read_restart(FILE *fp)
 
 void PairMembraneTail::write_restart_settings(FILE *fp)
 {
-
-  // not sure if I should set these flags to zero
-  // 
+  // pw359: not tested yet
   fwrite(&cut_global,sizeof(double),1,fp);
-  //fwrite(&offset_flag,sizeof(int),1,fp);
-  //fwrite(&mix_flag,sizeof(int),1,fp);
-  //fwrite(&tail_flag,sizeof(int),1,fp);
 }
 
 /* ----------------------------------------------------------------------
@@ -429,17 +317,12 @@ void PairMembraneTail::write_restart_settings(FILE *fp)
 
 void PairMembraneTail::read_restart_settings(FILE *fp)
 {
+  // pw359: not tested yet
   int me = comm->me;
   if (me == 0) {
     fread(&cut_global,sizeof(double),1,fp);
-    //fread(&offset_flag,sizeof(int),1,fp);
-    //fread(&mix_flag,sizeof(int),1,fp);
-    //fread(&tail_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
-//  MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
-//  MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
-//  MPI_Bcast(&tail_flag,1,MPI_INT,0,world);
 }
 
 /* ----------------------------------------------------------------------
@@ -469,29 +352,30 @@ double PairMembraneTail::single(int i, int j, int itype, int jtype, double rsq,
                          double factor_coul, double factor_lj,
                          double &fforce)
 {
-  double r2inv,r6inv,forcelj,philj;
 
+  double dvdr, vattr, cosone, r, rc, rcpwc;
 
-/*
-  r2inv = 1.0/rsq;
-  r6inv = r2inv*r2inv*r2inv;
-  forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
-  fforce = factor_lj*forcelj*r2inv;
+  r      = sqrt(rsq);
+  rcpwc  = sqrt(cutsq[itype][jtype]);
+  rc     = rcpwc - wc[itype][jtype];
 
-  philj = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
-    offset[itype][jtype];
+  if (r < rc) {
+    vattr  =  1.0;
+    fforce =  0.0; 
+  }
+  else if (r >= rc && r <= rcpwc) {
 
-*/
+    // energy
+    cosone =  cos(MY_PI * (r - rc)/(2.*wc[itype][jtype]));
+    vattr  =  cosone * cosone;
 
-  return factor_lj*philj;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void *PairMembraneTail::extract(const char *str, int &dim)
-{
-  dim = 2;
-  if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
-  if (strcmp(str,"wc") == 0) return (void *) wc;
-  return NULL;
+    //force
+    dvdr   = MY_PI * epsilon[itype][jtype] * sin(MY_PI*(r-rc)/wc[itype][jtype]) / (2.*wc[itype][jtype]);
+    fforce = -dvdr * factor_lj / r ;
+  }
+  else {
+    vattr  = 0;
+    fforce = 0;
+  }
+  return -factor_lj*vattr*epsilon[itype][jtype];
 }

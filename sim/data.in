@@ -1,0 +1,19 @@
+LAMMPS data file
+
+2 atoms
+2 atom types
+
+-5 5  	xlo xhi
+-5 5  	ylo yhi
+-5 5    zlo zhi
+
+Masses
+
+1 1
+2 1
+
+Atoms 
+
+2 1 3 0 0
+1 2 0 0 0
+
