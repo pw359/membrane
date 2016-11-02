@@ -1,5 +1,5 @@
 #!/bin/bash
-latex --shell-escape document.tex
-latex --shell-escape document.tex
-dvipdf document.dvi
-rm document.aux document.auxlock  document.dvi document.log documentNotes.bib 
+latex --shell-escape membrane.tex
+latex --shell-escape membrane.tex
+dvipdf membrane.dvi
+rm membrane.aux membrane.auxlock  membrane.dvi membrane.log membraneNotes.bib 
